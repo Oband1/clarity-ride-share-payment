@@ -13,6 +13,7 @@
 (define-constant err-no-dispute (err u108))
 (define-constant err-ride-exists (err u109))
 (define-constant err-invalid-fare (err u110))
+(define-constant err-invalid-refund (err u111))
 (define-constant min-rating u1)
 (define-constant max-rating u5)
 
@@ -48,11 +49,19 @@
         (ride (unwrap! (map-get? rides { ride-id: ride-id }) err-invalid-ride))
         (dispute (unwrap! (map-get? disputes { ride-id: ride-id }) err-no-dispute))
     )
+        ;; Validate conditions first
         (asserts! (is-eq tx-sender contract-owner) err-owner-only)
         (asserts! (get disputed ride) err-no-dispute)
         (asserts! (not (get dispute-resolved ride)) err-dispute-exists)
+        (asserts! (<= refund-amount (get fare ride)) err-invalid-refund)
         
-        ;; Update state before transfer
+        ;; Perform transfer first (check-effects-interactions pattern)
+        (if (> refund-amount u0)
+            (try! (stx-transfer? refund-amount (get driver ride) (get passenger ride)))
+            true
+        )
+        
+        ;; Update states after successful transfer
         (map-set disputes
             { ride-id: ride-id }
             (merge dispute {
@@ -66,11 +75,7 @@
             (merge ride { dispute-resolved: true })
         )
         
-        ;; Perform transfer last
-        (if (> refund-amount u0)
-            (try! (stx-transfer? refund-amount (get driver ride) (get passenger ride)))
-            (ok true)
-        )
+        (ok true)
     )
 )
 
